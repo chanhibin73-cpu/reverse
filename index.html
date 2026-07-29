@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>オンラインオセロ</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- PeerJS (WebRTCオンライン通信用CDN) -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+<body>
+
+  <!-- 1. メインメニュー画面 -->
+  <div id="menu-screen" class="screen active">
+    <h1>オセロ Online</h1>
+    
+    <div class="user-rating-box">
+      レート: <span id="user-rating-val">100</span> R
+    </div>
+
+    <div class="menu-card">
+      <button class="btn btn-online" onclick="showScreen('online-screen')">🌐 オンライン対戦</button>
+      <button class="btn" onclick="showDifficultySelect()">🤖 AI対戦</button>
+      <button class="btn btn-secondary" onclick="startGame('pvp')">👥 ローカル対戦</button>
+      <button class="btn btn-secondary" onclick="loadRanking(); showScreen('ranking-screen');">🏆 全国ランキング</button>
+      <button class="btn btn-secondary" onclick="showScreen('profile-screen')">👤 プロフィール</button>
+      <button class="btn btn-secondary" onclick="showScreen('settings-screen')">⚙️ 設定</button>
+    </div>
+  </div>
+
+  <!-- 2. AI難易度選択画面 -->
+  <div id="difficulty-screen" class="screen">
+    <h1>AI 難易度選択</h1>
+    <div class="menu-card">
+      <button class="btn" onclick="startGame('ai', 1)">🌱 初級 (ランダム)</button>
+      <button class="btn" onclick="startGame('ai', 2)">🌿 中級 (評価表)</button>
+      <button class="btn" onclick="startGame('ai', 3)">🌳 上級 (3手読み)</button>
+      <button class="btn" onclick="startGame('ai', 4)">🔥 最強 (5手読み/終盤全読み)</button>
+      <button class="btn btn-ultra" onclick="startGame('ai', 5)">⚡ 超最強 (高速エンジン)</button>
+      <button class="btn btn-secondary" onclick="showScreen('menu-screen')">戻る</button>
+    </div>
+  </div>
+
+  <!-- 3. オンライン対戦ロビー画面 -->
+  <div id="online-screen" class="screen">
+    <h1>オンライン対戦</h1>
+    <div class="menu-card">
+      <button class="btn btn-online" onclick="startRandomMatch()">🎲 ランダムマッチング</button>
+      
+      <hr style="border: 0.5px solid var(--card-border); margin: 5px 0;">
+
+      <div class="room-input-group">
+        <label for="room-number">部屋番号 (4桁の数字)</label>
+        <input type="text" id="room-number" maxlength="4" placeholder="1234">
+      </div>
+
+      <button class="btn" onclick="createRoom()">🏠 部屋を作成</button>
+      <button class="btn btn-secondary" onclick="joinRoom()">🚪 部屋に参加</button>
+
+      <div id="online-status" class="online-status-text"></div>
+      <button id="cancel-online-btn" class="btn btn-danger" style="display:none;" onclick="cancelOnlineWaiting()">キャンセル</button>
+      <button class="btn btn-secondary" onclick="showScreen('menu-screen')">戻る</button>
+    </div>
+  </div>
+
+  <!-- 4. ゲーム対局画面 -->
+  <div id="game-screen" class="screen">
+    <div id="spectator-badge" class="spectator-badge" style="display: none;">👀 観戦モード</div>
+
+    <div class="status-panel">
+      <div id="black-score">黒: 2</div>
+      <div id="turn-display" class="turn-indicator">黒の番</div>
+      <div id="white-score">白: 2</div>
+    </div>
+
+    <!-- 盤面エリア -->
+    <div class="board-container">
+      <div id="board" class="board"></div>
+      
+      <!-- 通信同期オーバーレイ -->
+      <div id="sync-overlay" class="sync-overlay">相手の通信応答を待っています...</div>
+      
+      <!-- AI思考中バッジ -->
+      <div id="thinking-badge" class="thinking-overlay" style="display: none;">🤔 思考中...</div>
+      
+      <!-- ポップアップ通知バナー -->
+      <div id="message-banner" class="message-banner"></div>
+    </div>
+
+    <!-- AI形勢判断パネル -->
+    <div class="analysis-panel">
+      <div id="analysis-title" class="analysis-title">🤖 AI形勢判断</div>
+      <div class="bar-container">
+        <div id="eval-bar" class="bar-black" style="width: 50%;"></div>
+      </div>
+      <div id="eval-text" class="analysis-text">互角 (+0)</div>
+    </div>
+
+    <!-- 操作ボタン -->
+    <div class="nav-btns">
+      <button id="reset-btn" class="btn btn-secondary" onclick="resetGame()">リセット</button>
+      <button id="menu-btn" class="btn btn-secondary" onclick="showScreen('menu-screen')">メニュー</button>
+      <button id="leave-online-btn" class="btn btn-danger" style="display:none;" onclick="leaveOnlineAndReturnMenu()">退出 (降参)</button>
+    </div>
+  </div>
+
+  <!-- 5. 全国ランキング画面 -->
+  <div id="ranking-screen" class="screen">
+    <h1>🏆 全国ランキング</h1>
+    <div class="menu-card">
+      <div id="ranking-list" class="ranking-list">
+        <!-- JSでランキング項目を動的生成 -->
+      </div>
+      <button class="btn btn-secondary" onclick="showScreen('menu-screen')">戻る</button>
+    </div>
+  </div>
+
+  <!-- 6. プロフィール画面 -->
+  <div id="profile-screen" class="screen">
+    <h1>プロフィール</h1>
+    <div class="menu-card">
+      <div class="setting-group">
+        <label for="profile-name-input">プレイヤー名</label>
+        <input type="text" id="profile-name-input" maxlength="10" placeholder="名前を入力">
+      </div>
+
+      <div class="user-rating-box" style="margin: 10px 0;">
+        現在のレート: <span id="profile-rating-val">100</span> R
+      </div>
+
+      <div class="streak-box">
+        <div class="streak-item">
+          <span>現在の連勝</span>
+          <div id="current-streak-val" class="streak-count">0</div>
+        </div>
+        <div class="streak-item">
+          <span>最高連勝記録</span>
+          <div id="max-streak-val" class="streak-count">0</div>
+        </div>
+      </div>
+
+      <button class="btn" onclick="saveProfileName()">保存する</button>
+      <button class="btn btn-secondary" onclick="showScreen('menu-screen')">戻る</button>
+    </div>
+  </div>
+
+  <!-- 7. 設定画面 -->
+  <div id="settings-screen" class="screen">
+    <h1>設定</h1>
+    <div class="menu-card">
+      <div class="setting-group">
+        <label for="bgm-type">BGM タイプ</label>
+        <select id="bgm-type" onchange="changeBGMType(this.value)">
+          <option value="pop">ポップ</option>
+          <option value="ambient">アンビエント</option>
+          <option value="8bit">8-Bit</option>
+        </select>
+      </div>
+
+      <div class="setting-group">
+        <label>BGM 音量 (<span id="bgm-val">50</span>%)</label>
+        <input type="range" id="bgm-volume" min="0" max="100" value="50" oninput="updateVolume()">
+      </div>
+
+      <div class="setting-group">
+        <label>SE 音量 (<span id="se-val">70</span>%)</label>
+        <input type="range" id="se-volume" min="0" max="100" value="70" oninput="updateVolume()">
+      </div>
+
+      <div class="setting-group">
+        <label for="bg-color-select">背景テーマカラー</label>
+        <select id="bg-color-select" onchange="changeBgColor(this.value)">
+          <option value="#2b3a42">ダークブルー</option>
+          <option value="#1a1a1a">ダークグレー</option>
+          <option value="#2c3e50">ミッドナイト</option>
+          <option value="#34495e">シックグレー</option>
+        </select>
+      </div>
+
+      <button class="btn btn-secondary" onclick="showScreen('menu-screen')">戻る</button>
+    </div>
+  </div>
+
+  <!-- JSモジュール読み込み -->
+  <script type="module" src="script.js"></script>
+</body>
+</html>
